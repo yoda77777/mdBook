@@ -552,6 +552,10 @@ fn make_data(
         json!(html_config.sidebar_header_nav),
     );
 
+    if let Some(ref footer) = html_config.footer {
+        data.insert("footer".to_owned(), json!(footer));
+    }
+
     let search = html_config.search.clone();
     if cfg!(feature = "search") {
         let search = search.unwrap_or_default();

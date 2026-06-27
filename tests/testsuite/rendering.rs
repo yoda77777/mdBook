@@ -4,6 +4,20 @@
 
 use crate::prelude::*;
 
+// Checks that output.html.footer is rendered on every page.
+#[test]
+fn custom_footer() {
+    BookTest::from_dir("rendering/custom_footer")
+        .check_file_contains(
+            "book/index.html",
+            "<footer id=\"mdbook-footer\" class=\"footer\">\n                        © 2026 Custom Footer Test\n                    </footer>",
+        )
+        .check_file_contains(
+            "book/chapter_1.html",
+            "<footer id=\"mdbook-footer\" class=\"footer\">\n                        © 2026 Custom Footer Test\n                    </footer>",
+        );
+}
+
 // Checks that edit-url-template works.
 #[test]
 fn edit_url_template() {

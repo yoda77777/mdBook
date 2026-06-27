@@ -111,6 +111,7 @@ site-url = "/example-book/"
 cname = "myproject.rs"
 input-404 = "not-found.md"
 sidebar-header-nav = true
+footer = "© 2026 Example Project"
 ```
 
 The following configuration options are available:
@@ -170,6 +171,8 @@ The following configuration options are available:
   Static CSS and JS files can reference each other using `{{ resource "filename" }}` directives.
   Defaults to `true`.
 - **sidebar-header-nav:** If `true`, the sidebar will contain navigation for headers on the current page. Default is `true`.
+- **footer:** An optional custom footer line shown at the bottom of every rendered page.
+  When unset, no footer is rendered. The text is HTML-escaped.
 
 [custom domain]: https://docs.github.com/en/github/working-with-github-pages/managing-a-custom-domain-for-your-github-pages-site
 
