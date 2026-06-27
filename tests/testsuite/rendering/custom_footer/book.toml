@@ -1,0 +1,5 @@
+[book]
+title = "custom_footer"
+
+[output.html]
+footer = "© 2026 Custom Footer Test"

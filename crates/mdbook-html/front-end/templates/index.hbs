@@ -218,6 +218,12 @@
                         {{{ content }}}
                     </main>
 
+                    {{#if footer}}
+                    <footer id="mdbook-footer" class="footer">
+                        {{ footer }}
+                    </footer>
+                    {{/if}}
+
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         {{#if previous}}

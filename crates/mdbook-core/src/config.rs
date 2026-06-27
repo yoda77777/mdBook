@@ -518,6 +518,9 @@ pub struct HtmlConfig {
     /// If enabled, the sidebar includes navigation for headers on the current
     /// page. Default is `true`.
     pub sidebar_header_nav: bool,
+    /// Optional custom footer line shown at the bottom of every rendered page.
+    /// When `None`, no footer is rendered.
+    pub footer: Option<String>,
 }
 
 impl Default for HtmlConfig {
@@ -548,6 +551,7 @@ impl Default for HtmlConfig {
             redirect: HashMap::new(),
             hash_files: true,
             sidebar_header_nav: true,
+            footer: None,
         }
     }
 }
@@ -833,6 +837,20 @@ mod tests {
 
         let got = Config::from_str(src).unwrap();
         assert!(!got.html_config().unwrap().playground.runnable);
+    }
+
+    #[test]
+    fn html_footer_option() {
+        let src = r#"
+        [output.html]
+        footer = "© 2026 Example"
+        "#;
+
+        let got = Config::from_str(src).unwrap();
+        assert_eq!(
+            got.html_config().unwrap().footer.as_deref(),
+            Some("© 2026 Example")
+        );
     }
 
     #[test]
