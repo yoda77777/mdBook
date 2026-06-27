@@ -85,3 +85,32 @@ fn dest_dir_relative_path() {
     });
     assert!(current_dir.join("foo/index.html").exists());
 }
+
+// Absolute paths in SUMMARY.md that point outside `src/` should fail with a
+// clear error instead of panicking (https://github.com/rust-lang/mdBook/issues/2559).
+#[test]
+fn absolute_path_outside_src_errors() {
+    let mut test = BookTest::from_dir("build/basic_build");
+    let outside = test.dir.join("outside.md");
+    std::fs::write(&outside, "# Outside\n").unwrap();
+    // Use an absolute path that is not under the book's `src/` directory.
+    let absolute = outside.canonicalize().unwrap();
+    std::fs::write(
+        test.dir.join("src/SUMMARY.md"),
+        format!("# Summary\n\n- [Outside]({})\n", absolute.display()),
+    )
+    .unwrap();
+
+    test.run("build", |cmd| {
+        cmd.expect_failure().expect_stderr(str![[r#"
+ERROR Unable to create missing chapters
+[TAB]Caused by: chapter path `[ROOT]/outside.md` is outside the book source directory `[ROOT]/src`
+
+"#]]);
+    });
+    // create-missing must not create chapters outside the source tree either.
+    // Re-run would be the same path; assert the outside file was not rewritten
+    // by create-missing (content stays as we wrote it).
+    let contents = std::fs::read_to_string(&outside).unwrap();
+    assert_eq!(contents, "# Outside\n");
+}

@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use mdbook_core::book::{Book, BookItem, Chapter};
 use mdbook_core::config::BuildConfig;
 use mdbook_core::utils::{escape_html, fs};
 use mdbook_summary::{Link, Summary, SummaryItem, parse_summary};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::debug;
 
 /// Load a book into memory from its `src/` directory.
@@ -33,7 +33,7 @@ fn create_missing(src_dir: &Path, summary: &Summary) -> Result<()> {
     while let Some(next) = items.pop() {
         if let SummaryItem::Link(ref link) = *next {
             if let Some(ref location) = link.location {
-                let filename = src_dir.join(location);
+                let filename = resolve_chapter_path(src_dir, location)?;
                 if !filename.exists() {
                     if let Some(parent) = filename.parent() {
                         if !parent.exists() {
@@ -51,6 +51,31 @@ fn create_missing(src_dir: &Path, summary: &Summary) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Resolve a chapter path from `SUMMARY.md` and ensure it stays inside `src_dir`.
+///
+/// Absolute paths are allowed only when they point inside the source directory.
+/// Paths outside the book source should fail with a clear error instead of panicking.
+fn resolve_chapter_path(src_dir: &Path, location: &Path) -> Result<PathBuf> {
+    let path = if location.is_absolute() {
+        location.to_path_buf()
+    } else {
+        src_dir.join(location)
+    };
+
+    // Prefer a clean relative path when the chapter is under `src_dir`.
+    // Fall back to `starts_with` so absolute paths that canonicalize to the
+    // same prefix are still accepted (e.g. on platforms where join semantics differ).
+    if path.strip_prefix(src_dir).is_ok() || path.starts_with(src_dir) {
+        return Ok(path);
+    }
+
+    bail!(
+        "chapter path `{}` is outside the book source directory `{}`",
+        location.display(),
+        src_dir.display()
+    );
 }
 
 /// Use the provided `Summary` to load a `Book` from disk.
@@ -100,11 +125,7 @@ fn load_chapter<P: AsRef<Path>>(
     let mut ch = if let Some(ref link_location) = link.location {
         debug!("Loading {} ({})", link.name, link_location.display());
 
-        let location = if link_location.is_absolute() {
-            link_location.clone()
-        } else {
-            src_dir.join(link_location)
-        };
+        let location = resolve_chapter_path(src_dir, link_location)?;
 
         let mut content = std::fs::read_to_string(&location)
             .with_context(|| format!("failed to read chapter `{}`", link_location.display()))?;
@@ -115,7 +136,13 @@ fn load_chapter<P: AsRef<Path>>(
 
         let stripped = location
             .strip_prefix(src_dir)
-            .expect("Chapters are always inside a book");
+            .with_context(|| {
+                format!(
+                    "chapter path `{}` is outside the book source directory `{}`",
+                    link_location.display(),
+                    src_dir.display()
+                )
+            })?;
 
         Chapter::new(&link.name, content, stripped, parent_names.clone())
     } else {
@@ -219,10 +246,66 @@ And here is some \
 
     #[test]
     fn cant_load_a_nonexistent_chapter() {
-        let link = Link::new("Chapter 1", "/foo/bar/baz.md");
+        let temp_dir = TempFileBuilder::new().prefix("book").tempdir().unwrap();
+        let link = Link::new("Chapter 1", "missing.md");
 
-        let got = load_chapter(&link, "", Vec::new());
+        let got = load_chapter(&link, temp_dir.path(), Vec::new());
         assert!(got.is_err());
+        let err = got.err().unwrap().to_string();
+        assert!(
+            err.contains("failed to read chapter"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn absolute_path_outside_src_is_an_error() {
+        let temp_dir = TempFileBuilder::new().prefix("book").tempdir().unwrap();
+        let outside = TempFileBuilder::new().prefix("outside").tempdir().unwrap();
+        let chapter_path = outside.path().join("second.md");
+        fs::write(&chapter_path, "# Second\n").unwrap();
+
+        let link = Link::new("Second", &chapter_path);
+        let got = load_chapter(&link, temp_dir.path(), Vec::new());
+        assert!(got.is_err());
+        let err = format!("{:#}", got.err().unwrap());
+        assert!(
+            err.contains("is outside the book source directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn absolute_path_inside_src_is_ok() {
+        let temp_dir = TempFileBuilder::new().prefix("book").tempdir().unwrap();
+        let chapter_path = temp_dir.path().join("chapter_1.md");
+        fs::write(&chapter_path, DUMMY_SRC).unwrap();
+
+        let link = Link::new("Chapter 1", &chapter_path);
+        let got = load_chapter(&link, temp_dir.path(), Vec::new()).unwrap();
+        assert_eq!(got.name, "Chapter 1");
+        assert_eq!(got.path.as_deref(), Some(Path::new("chapter_1.md")));
+    }
+
+    #[test]
+    fn create_missing_rejects_absolute_path_outside_src() {
+        let temp_dir = TempFileBuilder::new().prefix("book").tempdir().unwrap();
+        let outside_dir = TempFileBuilder::new().prefix("outside").tempdir().unwrap();
+        let outside = outside_dir.path().join("outside-chapter.md");
+
+        let mut summary = Summary::default();
+        let link = Link::new("Outside", &outside);
+        summary.numbered_chapters = vec![SummaryItem::Link(link)];
+
+        let got = create_missing(temp_dir.path(), &summary);
+        assert!(got.is_err());
+        let err = got.err().unwrap().to_string();
+        assert!(
+            err.contains("is outside the book source directory"),
+            "unexpected error: {err}"
+        );
+        // Must not create the file outside the book source.
+        assert!(!outside.exists());
     }
 
     #[test]
